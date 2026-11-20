@@ -146,7 +146,7 @@ endpoints. The interactive docs are at `/docs`.
 * **GitHub Action:** run evaluations in CI with no server:
 
   ```yaml
-  - uses: jeanvaldez10/codejudge@main
+  - uses: jeanvaldez10/codejudge@master
     with:
       task: tasks/interval-merge
       candidates: |
