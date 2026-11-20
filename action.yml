@@ -1,0 +1,59 @@
+name: CodeJudge
+description: Evaluate AI-generated code candidates against a task inside sandboxed containers.
+branding: {icon: check-square, color: purple}
+
+inputs:
+  task:
+    description: Path to task.yaml (or a directory containing one).
+    required: true
+  candidates:
+    description: Newline-separated LABEL=PATH[@MODEL] entries.
+    required: true
+  fail-under:
+    description: Fail the job if the best candidate's overall score is below this.
+    required: false
+    default: ""
+  stages:
+    description: Optional comma-separated subset of stages.
+    required: false
+    default: ""
+  anthropic-api-key:
+    description: Enables the advisory LLM review stage.
+    required: false
+    default: ""
+
+outputs:
+  report:
+    description: Path to the Markdown report.
+    value: ${{ steps.run.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with: {python-version: "3.12"}
+    - shell: bash
+      run: pip install "${{ github.action_path }}[llm]"
+    - shell: bash
+      run: docker build -t codejudge-sandbox:latest "${{ github.action_path }}/sandbox"
+    - id: run
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        CJ_TASK: ${{ inputs.task }}
+        CJ_CANDIDATES: ${{ inputs.candidates }}
+        CJ_FAIL_UNDER: ${{ inputs.fail-under }}
+        CJ_STAGES: ${{ inputs.stages }}
+      run: |
+        args=()
+        while IFS= read -r line; do
+          [ -n "$line" ] && args+=(-c "$line")
+        done <<< "$CJ_CANDIDATES"
+        [ -n "$CJ_FAIL_UNDER" ] && args+=(--fail-under "$CJ_FAIL_UNDER")
+        [ -n "$CJ_STAGES" ] && args+=(--stages "$CJ_STAGES")
+        set +e
+        codejudge evaluate "$CJ_TASK" "${args[@]}" --public -o codejudge-report.md
+        code=$?
+        cat codejudge-report.md >> "$GITHUB_STEP_SUMMARY"
+        echo "report=codejudge-report.md" >> "$GITHUB_OUTPUT"
+        exit $code

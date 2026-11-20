@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -e ".[dev,llm]"
+      - run: ruff check src tests
+      - run: ruff format --check src tests
+      - run: mypy
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: {POSTGRES_USER: cj, POSTGRES_PASSWORD: cj, POSTGRES_DB: cj}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U cj" --health-interval 5s --health-retries 10
+    strategy:
+      matrix:
+        db: [sqlite, postgres]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -e ".[dev,llm,postgres,local-tools]" "setuptools<81"
+      - name: Unit + local-backend pipeline tests
+        env:
+          CODEJUDGE_TEST_DATABASE_URL: ${{ matrix.db == 'postgres' && 'postgresql+psycopg://cj:cj@localhost:5432/cj' || '' }}
+        run: pytest -m "not docker" -q
+
+  docker-sandbox:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -e ".[dev]"
+      - name: Build sandbox image
+        run: docker build -t codejudge-sandbox:latest sandbox/
+      - name: Isolation tests (network, filesystem, memory, pids, timeouts)
+        run: pytest -m docker -q
+      - name: Evaluate the example candidates
+        run: |
+          codejudge evaluate examples/interval-merge \
+            -c "Model A=examples/interval-merge/candidates/model_a@assistant-a" \
+            -c "Model B=examples/interval-merge/candidates/model_b@assistant-b" \
+            -c "Model C=examples/interval-merge/candidates/model_c@assistant-c" \
+            --public -o report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with: {name: example-report, path: report.md}
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults: {run: {working-directory: frontend}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json}
+      - run: npm ci
+      - run: npm run build

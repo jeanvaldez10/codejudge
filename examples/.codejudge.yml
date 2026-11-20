@@ -1,0 +1,11 @@
+# Example repository config for the GitHub webhook integration. Place this
+# file at the root of a repository whose pull requests contain candidates.
+task_id: interval-merge
+candidates:
+  - label: Model A
+    model: assistant-a
+    path: examples/interval-merge/candidates/model_a
+  - label: Model B
+    model: assistant-b
+    path: examples/interval-merge/candidates/model_b
+# stages: [visible_tests, hidden_tests, security]   # optional subset

@@ -1,0 +1,49 @@
+# Local deployment: API + worker + PostgreSQL.
+#
+#   docker build -t codejudge-sandbox:latest sandbox/
+#   docker compose up --build
+#
+# The worker talks to the host Docker daemon to start sandbox containers.
+# Sandbox bind mounts are resolved by the *host*, so the scratch directory
+# is mounted at the same absolute path inside the worker.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: codejudge
+      POSTGRES_PASSWORD: codejudge
+      POSTGRES_DB: codejudge
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codejudge"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: .
+    environment: &env
+      CODEJUDGE_DATABASE_URL: postgresql+psycopg://codejudge:codejudge@db:5432/codejudge
+      CODEJUDGE_API_TOKEN: ${CODEJUDGE_API_TOKEN:-}
+      CODEJUDGE_GITHUB_WEBHOOK_SECRET: ${CODEJUDGE_GITHUB_WEBHOOK_SECRET:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    ports: ["8000:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+
+  worker:
+    build: .
+    command: ["codejudge", "worker"]
+    environment:
+      <<: *env
+      CODEJUDGE_WORK_DIR: /tmp/codejudge-work
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/codejudge-work:/tmp/codejudge-work
+    depends_on:
+      db: {condition: service_healthy}
+    deploy:
+      replicas: 2
+
+volumes:
+  pgdata:
