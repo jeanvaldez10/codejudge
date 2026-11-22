@@ -1,0 +1,30 @@
+---
+description: CodeJudge evaluation contract and milestone gate
+alwaysApply: true
+---
+
+# Evaluation contract
+
+CodeJudge ranks AI-generated code with deterministic evidence. The LLM review is advisory and cannot override a gate. Spec: `docs/rdp/`.
+
+Do not start M1, M2, M3, or roadmap items R1–R7 unless the user names that milestone. Bugfixes inside the current contract are fine.
+
+When a change touches a verdict, score, or report:
+
+- Build or integrity failure sets overall to 0. Security or correctness gates cap overall at 49.
+- Rank is verdict, then overall, then functional correctness: `pass`, then `pass_with_warnings`, then `fail`.
+- Dropped signals are renormalized. Reports must show the weights actually used (`effective_weights` once M1 exists).
+- Hidden tests and hidden failure text stay out of public reports, generator prompts, and the LLM review.
+- A stage crash is status `error`, never a clean pass. Do not invent an `incomplete` verdict until M1 is explicitly requested.
+
+```python
+# BAD: a scanner crash becomes a passing candidate
+if security.status == StageStatus.error:
+    security_score = 100
+
+# GOOD: the signal is absent and the stage says error
+if security.status == StageStatus.error:
+    security_score = None  # weight redistributed; status stays error
+```
+
+Keep these seams: `Task.language`, `Sandbox.run`, `Stage`, the task snapshot on the submission, `Generator`, `redact_hidden` / `public_view`. New languages, tenants, and sandbox backends extend those seams; they do not add a second pipeline.

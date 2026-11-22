@@ -1,0 +1,28 @@
+---
+description: Score, gate, and rank rules for the evaluator
+globs: src/codejudge/scoring.py,src/codejudge/pipeline.py,src/codejudge/report.py,tests/test_scoring.py
+alwaysApply: false
+---
+
+# Scoring
+
+Weights live in `WEIGHTS` in `scoring.py`. Do not duplicate them in the README, the API, or the dashboard.
+
+- Functional correctness is the pass rate of category `correctness`. Edge-case and integration rates stay separate.
+- Own-test coverage counts only when those tests pass. A missing signal is omitted and the remaining weights are renormalized.
+- Unbudgeted performance is `fastest / this` inside one `evaluate` call. Do not compare scores across submissions.
+- `finalize` runs after `apply_relative_performance`.
+
+```python
+# BAD: every gate capped at 49 (README drift)
+if gates:
+    overall = min(overall, 49.0)
+
+# GOOD: no partial credit when the candidate did not build or tampered
+if "build" in gates or "integrity" in gates:
+    overall = 0.0
+elif gates:
+    overall = min(overall, 49.0)
+```
+
+Pin both caps with a test when you change `finalize`. `EvaluationReport.weights` is the nominal table; do not pretend it is the renormalized map.

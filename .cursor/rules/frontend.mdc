@@ -1,0 +1,25 @@
+---
+description: Dashboard must follow the public report and the task module
+globs: frontend/**/*.{ts,tsx,css}
+alwaysApply: false
+---
+
+# Dashboard
+
+The dashboard is a client of the API. It does not score candidates locally.
+
+- Render verdicts and scores from the report. Do not recompute gates in TypeScript.
+- Send `Authorization: Bearer` from `localStorage["codejudge.token"]` only. Do not hardcode a token.
+- Public view by default, and upload `<task.module>.py`, are M2 (decision D7). Leave the current full-report fetch and `solution.py` form until M2 is requested.
+
+```tsx
+// Current, keep until M2: full report, solution.py
+api.submission(id)
+files: { "solution.py": source }
+
+// M2 target, do not apply early
+api.submission(id, "public")
+files: { [`${task.module}.py`]: source }
+```
+
+Keep the compare table and the stage drill-down. A leaderboard page waits for milestone M3.

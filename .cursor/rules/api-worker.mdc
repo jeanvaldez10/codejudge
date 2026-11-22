@@ -1,0 +1,25 @@
+---
+description: API enqueue path, auth, and the worker queue
+globs: src/codejudge/api/**/*.py,src/codejudge/worker.py,src/codejudge/db.py,src/codejudge/config.py
+alwaysApply: false
+---
+
+# API and worker
+
+Routes validate and insert a `queued` row. They do not call `evaluate`. Execution stays in `codejudge worker`. `CODEJUDGE_INLINE_WORKER` is demo-only.
+
+- Mutating routes use `require_token` when `CODEJUDGE_API_TOKEN` is set.
+- Hidden task bodies and unredacted reports require a matching bearer token. An empty token is not a privileged caller unless `CODEJUDGE_ALLOW_OPEN_ACCESS=1` (that flag arrives with M2; do not add it early).
+- `GET` list payloads omit source and hidden failure text.
+- Enforce `CODEJUDGE_MAX_FILE_BYTES` and `CODEJUDGE_MAX_CANDIDATES` before insert. Relative performance is only valid inside one submission.
+- Claim a job with the conditional `queued` → `running` update. Do not add a second queue.
+
+```python
+# BAD: running the pipeline inside the request
+report = evaluate(task, candidates, get_sandbox())
+
+# GOOD: persist the snapshot and return 202
+row = SubmissionRow(task_spec=task.model_dump(mode="json"), status="queued")
+```
+
+Schema changes need a migration. `create_all` does not alter existing tables. Do not mount extra host paths into the worker; `/var/run/docker.sock` is already host-root equivalent.

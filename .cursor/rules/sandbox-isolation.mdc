@@ -1,0 +1,21 @@
+---
+description: Sandbox boundary and hidden-test handling
+globs: src/codejudge/sandbox/**/*.py,src/codejudge/stages/**/*.py,src/codejudge/harness/**/*.py,tests/test_docker_sandbox.py,sandbox/**
+alwaysApply: false
+---
+
+# Isolation
+
+The API process does not execute candidate code. Only the worker does, via `Sandbox.run`.
+
+Docker commands keep `--network none`, a read-only root and workspace, dropped capabilities, `no-new-privileges`, uid 10001, memory with no swap, PID and fd limits, and a timeout enforced by `docker kill`. The `local` backend is rlimits only and must refuse to start unless `CODEJUDGE_ALLOW_LOCAL_SANDBOX=1`.
+
+Integrity is an AST scan. It never executes candidate code. Today it scans solution files only, and every suite is written under `_cj_tests/` for the whole run. That leak is M1 (decision D5). Do not change the layout until M1 is requested. When M1 is requested, materialize only the suites that command may see, and scan every file that will be executed:
+
+```python
+# M1 target: hidden suites are absent while candidate tests run
+if stage_sees_hidden:
+    files[f"_cj_tests/{suite.name}.py"] = suite.code
+```
+
+A scanner or test runner that crashes returns `StageStatus.error` and a score of 0 for that run. It must not return an empty finding list with status `passed`. Candidate tests share the interpreter with the solution; do not describe the sandbox as proof against a candidate reading tests that are mounted beside it.
