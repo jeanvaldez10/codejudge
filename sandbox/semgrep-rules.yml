@@ -94,3 +94,22 @@ rules:
           metavariable: $VALUE
           regex: .{6,}
     metadata: {cwe: "CWE-798", category: security}
+
+  - id: codejudge.fast-password-hash
+    languages: [python]
+    severity: ERROR
+    message: Password hashed with a fast general-purpose hash; use hashlib.scrypt or pbkdf2_hmac with a salt.
+    patterns:
+      - pattern-either:
+          - pattern: hashlib.md5(...)
+          - pattern: hashlib.sha1(...)
+          - pattern: hashlib.sha256(...)
+          - pattern: hashlib.sha512(...)
+          - pattern: hashlib.new(...)
+      - pattern-inside: |
+          def $FUNC(...):
+            ...
+      - metavariable-regex:
+          metavariable: $FUNC
+          regex: (?i).*(password|passwd|pwd).*
+    metadata: {cwe: "CWE-916", category: security}

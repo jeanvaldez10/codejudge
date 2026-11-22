@@ -38,7 +38,7 @@ packages = ["src/codejudge"]
 line-length = 100
 target-version = "py311"
 src = ["src", "tests"]
-extend-exclude = ["examples"]
+extend-exclude = ["examples", "tasks"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]

@@ -64,8 +64,11 @@ class TestSuite(BaseModel):
 
 
 class Benchmark(BaseModel):
-    """A performance case. ``setup`` is trusted task code that must bind ``args``
-    (a tuple) and optionally ``kwargs`` (a dict) for the entrypoint call."""
+    """A performance case. ``setup`` is trusted task code that either binds
+    ``args`` (a tuple) and optionally ``kwargs`` (a dict) for a call to the
+    task entrypoint, or defines ``bench(module)``, which is timed instead.
+    Use ``bench`` for APIs that a single function call can't exercise,
+    such as classes."""
 
     name: str
     setup: str
@@ -74,6 +77,10 @@ class Benchmark(BaseModel):
     time_budget_ms: float | None = Field(
         default=None, description="Median wall time above which the benchmark fails."
     )
+
+    @property
+    def defines_bench(self) -> bool:
+        return re.search(r"^def bench\(", self.setup, re.MULTILINE) is not None
 
 
 class ResourceLimits(BaseModel):
@@ -115,8 +122,8 @@ class Task(BaseModel):
 
     @model_validator(mode="after")
     def _benchmarks_need_entrypoint(self) -> Task:
-        if self.benchmarks and not self.entrypoint:
-            raise ValueError("tasks with benchmarks must declare an entrypoint")
+        if not self.entrypoint and any(not b.defines_bench for b in self.benchmarks):
+            raise ValueError("benchmarks without a bench(module) function need an entrypoint")
         names = [s.name for s in self.tests]
         if len(names) != len(set(names)):
             raise ValueError("test suite names must be unique")

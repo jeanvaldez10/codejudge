@@ -4,8 +4,8 @@ task_id: interval-merge
 candidates:
   - label: Model A
     model: assistant-a
-    path: examples/interval-merge/candidates/model_a
+    path: tasks/interval-merge/candidates/model_a
   - label: Model B
     model: assistant-b
-    path: examples/interval-merge/candidates/model_b
+    path: tasks/interval-merge/candidates/model_b
 # stages: [visible_tests, hidden_tests, security]   # optional subset

@@ -21,7 +21,7 @@ class PerformanceStage(Stage):
 
     def run(self, ctx: StageContext) -> StageResult:
         task = ctx.task
-        if not task.benchmarks or not task.entrypoint:
+        if not task.benchmarks:
             return StageResult(
                 stage=self.name, status=StageStatus.skipped, summary="task defines no benchmarks"
             )

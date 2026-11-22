@@ -1,0 +1,26 @@
+id: user-store-sql
+title: SQLite user store
+module: solution
+description: |
+  Implement a small user store on `sqlite3` in `solution.py`. Every function
+  takes an open `sqlite3.Connection`.
+
+  - `init_schema(conn)`: create table `users(id INTEGER PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL, email TEXT NOT NULL)`. Calling it twice
+    must not fail.
+  - `create_user(conn, username: str, email: str) -> int`: insert a user and
+    return its id. Raise `ValueError` if the username is empty, the email
+    does not contain exactly one "@" with text on both sides, or the
+    username already exists.
+  - `find_user(conn, username: str) -> dict | None`: return
+    `{"id": ..., "username": ..., "email": ...}` or `None`.
+  - `search_users(conn, prefix: str) -> list[dict]`: users whose username
+    starts with `prefix` (case-sensitive, characters such as `%` and `_` are
+    literal), sorted by username.
+
+  Usernames and prefixes come from untrusted user input.
+limits: {timeout_seconds: 20}
+tests:
+  - {name: test_basic, file: tests/test_basic.py, category: correctness}
+  - {name: test_hidden_correctness, file: tests/test_hidden_correctness.py, category: correctness, hidden: true}
+  - {name: test_hidden_edge_cases, file: tests/test_hidden_edge_cases.py, category: edge_case, hidden: true}

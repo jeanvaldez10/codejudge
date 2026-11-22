@@ -1,0 +1,50 @@
+name: Benchmark
+
+# Manually triggered: generation calls paid model APIs, so it never runs on push.
+on:
+  workflow_dispatch:
+    inputs:
+      generators:
+        description: "Space-separated generator specs, e.g. 'reference anthropic:claude-opus-5-5'"
+        required: true
+        default: "reference anthropic:claude-opus-5-5"
+      samples:
+        description: Samples per task per generator
+        required: true
+        default: "3"
+      tasks:
+        description: Comma-separated task ids (empty = whole library)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -e ".[llm]"
+      - run: docker build -t codejudge-sandbox:latest sandbox/
+      - name: Generate candidates
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GENERATORS: ${{ inputs.generators }}
+          SAMPLES: ${{ inputs.samples }}
+          TASKS: ${{ inputs.tasks }}
+        run: |
+          args=()
+          for g in $GENERATORS; do args+=(-g "$g"); done
+          [ -n "$TASKS" ] && args+=(--only "$TASKS")
+          codejudge generate runs/ci "${args[@]}" --samples "$SAMPLES"
+      - name: Evaluate and rank
+        run: |
+          codejudge bench runs/ci -o runs/ci/leaderboard.md
+          cat runs/ci/leaderboard.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: benchmark-run, path: runs/ci}

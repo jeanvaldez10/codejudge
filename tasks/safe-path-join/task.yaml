@@ -1,0 +1,23 @@
+id: safe-path-join
+title: Path traversal-safe join
+module: solution
+description: |
+  Implement `safe_join(base: str, *parts: str) -> str` in `solution.py` for a
+  file server that maps user-supplied relative paths under a base directory
+  (POSIX paths).
+
+  Return the normalized absolute path of `base` joined with `parts`
+  (`os.path.normpath` semantics, so "a/./b/../c" becomes "a/c").
+  Raise `ValueError` if:
+
+  - `base` is not an absolute path;
+  - any part is an absolute path or contains a NUL byte;
+  - the result would be outside `base`. The result may equal `base` itself.
+
+  The check is purely lexical: do not touch the filesystem or resolve
+  symlinks.
+limits: {timeout_seconds: 20}
+tests:
+  - {name: test_basic, file: tests/test_basic.py, category: correctness}
+  - {name: test_hidden_correctness, file: tests/test_hidden_correctness.py, category: correctness, hidden: true}
+  - {name: test_hidden_traversal, file: tests/test_hidden_traversal.py, category: edge_case, hidden: true}

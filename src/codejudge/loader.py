@@ -44,3 +44,17 @@ def load_candidate(spec: str) -> Candidate:
                 continue
             files[p.relative_to(root).as_posix()] = p.read_text(encoding="utf-8")
     return Candidate(label=label, model=model or None, files=files)
+
+
+def discover_tasks(root: str | Path) -> list[Path]:
+    """Task directories under ``root`` (each containing a task.yaml), sorted."""
+    root = Path(root)
+    if (root / "task.yaml").is_file():
+        return [root]
+    return sorted(p.parent for p in root.glob("*/task.yaml"))
+
+
+def load_reference(task_dir: str | Path) -> Candidate | None:
+    """The task author's reference solution, if the task ships one."""
+    ref = Path(task_dir) / "reference"
+    return load_candidate(f"reference={ref}") if ref.is_dir() else None

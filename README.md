@@ -24,7 +24,7 @@ LLM rubric review adds a capped, advisory signal on top.
 | Execution time (geomean median) | 3.79 ms | 2.62 ms | n/a (timed out)    |
 | Gates failed                    | —       | security| —                  |
 ```
-<sub>Real output from `examples/interval-merge` on the Docker sandbox. Model B is the
+<sub>Real output from `tasks/interval-merge` on the Docker sandbox. Model B is the
 fastest and passes every correctness test, but parses input with `eval()`, so
 the security gate fails it. Model C mutates its input, misses touching
 intervals and is quadratic, so its benchmark times out.</sub>
@@ -100,10 +100,10 @@ docker build -t codejudge-sandbox:latest sandbox/
 Evaluate candidates from the command line:
 
 ```bash
-codejudge evaluate examples/interval-merge \
-  -c "Model A=examples/interval-merge/candidates/model_a@assistant-a" \
-  -c "Model B=examples/interval-merge/candidates/model_b@assistant-b" \
-  -c "Model C=examples/interval-merge/candidates/model_c@assistant-c" \
+codejudge evaluate tasks/interval-merge \
+  -c "Model A=tasks/interval-merge/candidates/model_a@assistant-a" \
+  -c "Model B=tasks/interval-merge/candidates/model_b@assistant-b" \
+  -c "Model C=tasks/interval-merge/candidates/model_c@assistant-c" \
   --format md -o report.md
 ```
 
@@ -114,7 +114,7 @@ docker compose up --build
 ```
 
 ```bash
-codejudge push-task examples/interval-merge --api http://localhost:8000
+codejudge push-task tasks/interval-merge --api http://localhost:8000
 ```
 
 To enable the LLM review stage, set `ANTHROPIC_API_KEY` for the worker. It
@@ -162,6 +162,73 @@ cd frontend && npm ci && npm run build   # served by the API at /
 npm run dev                              # or a dev server proxying to :8000
 ```
 
+## Comparing coding assistants
+
+CodeJudge ships with a task library (`tasks/`) and a benchmark runner that
+answers questions like *which assistant writes the most reliable Python?*
+
+| Task | What it probes |
+|---|---|
+| `interval-merge` | sorting, boundary conditions, input mutation, parsing |
+| `lru-cache` | data-structure design, O(1) operations |
+| `roman-numerals` | strict validation of canonical forms |
+| `csv-aggregate` | RFC 4180 quoting, CRLF, malformed rows |
+| `topo-sort` | graph algorithms, cycle detection, scale (100k nodes) |
+| `token-bucket` | time-dependent logic with an injectable clock |
+| `safe-path-join` | path traversal (security) |
+| `user-store-sql` | SQL injection, LIKE wildcard escaping (security) |
+| `password-hash` | salted slow KDFs, constant-time comparison (security) |
+
+Each task has visible example tests, held-out hidden tests (correctness, edge
+cases, integration), optional benchmarks with time budgets, and a reference
+solution. `tests/test_task_library.py` checks that every reference passes its
+own hidden tests, so a wrong hidden test can't silently penalise correct
+candidates.
+
+```bash
+# 1. Generate: 3 samples per task from each generator (resumable).
+codejudge generate runs/2026-11 \
+  -g reference \
+  -g anthropic:claude-opus-5-5 \
+  -g anthropic:claude-sonnet-5-5 \
+  -g dir:copilot=collected/copilot \
+  --samples 3
+
+# 2. Evaluate every sample in the sandbox and print the leaderboard.
+codejudge bench runs/2026-11 -o leaderboard.md
+```
+
+Generators:
+
+* `anthropic:<model>[:<effort>]`: Claude via the API (`ANTHROPIC_API_KEY`).
+* `dir:<name>=<path>`: solutions collected from any other assistant
+  (IDE plugins, chat UIs). Layout: `<path>/<task_id>/<sample>/*.py`. Give each
+  assistant the prompt from `codejudge.generation.build_prompt(task)` so every
+  generator sees the same instructions.
+* `reference`: the task's reference solution, as a ceiling and sanity check.
+
+Generators only see the public task (description and visible tests); hidden
+tests never leave the evaluator.
+
+The leaderboard reports, per generator:
+
+* **pass@1** and **pass@k** (unbiased estimator): a sample counts as solved
+  only if every visible and hidden test passed and no gate failed;
+* **mean overall score**, correctness, edge cases, own-test coverage, static
+  quality, security-failure rate and generation errors;
+* **95% confidence intervals** from a bootstrap over tasks, and a **paired
+  bootstrap** for every pair of generators. A gap is marked significant only
+  if its interval excludes zero.
+
+Samples that fail to generate count as unsolved with score 0, so an assistant
+can't improve its ranking by erroring out on hard tasks. All samples of a
+task are evaluated together, so relative performance is measured on the same
+machine at the same time.
+
+The **Benchmark** GitHub workflow runs the same thing on demand (Actions →
+Benchmark → Run workflow) using an `ANTHROPIC_API_KEY` repository secret, and
+publishes the leaderboard to the job summary.
+
 ## Defining a task
 
 ```yaml
@@ -181,6 +248,12 @@ benchmarks:
       import random
       args = ([(p, p + 5) for p in random.Random(1).sample(range(10**6), 20_000)],)
     time_budget_ms: 50
+  - name: stateful_api    # or define bench(module) to drive classes and APIs
+    setup: |
+      def bench(m):
+          cache = m.LRUCache(1000)
+          for i in range(100_000):
+              cache.put(i % 3000, i)
 rubric: [readability, maintainability, idiomatic_usage, error_handling, algorithmic_reasoning]
 ```
 
@@ -188,7 +261,7 @@ rubric: [readability, maintainability, idiomatic_usage, error_handling, algorith
 
 ```bash
 ruff check src tests && mypy
-pytest -m "not docker"   # unit, API, queue, local-backend pipeline tests
+pytest -m "not docker"   # unit, API, queue, task library, local-backend pipeline tests
 pytest -m docker         # isolation tests (needs Docker and the sandbox image)
 CODEJUDGE_TEST_DATABASE_URL=postgresql+psycopg://... pytest -m "not docker"
 ```
@@ -202,8 +275,11 @@ src/codejudge/
   harness/    scripts copied into the sandbox (pytest collector, benchmark runner)
   stages/     one module per verification stage
   scoring.py  scorecards, gates, relative performance, ranking
+  generation.py  candidate generators (Claude API, directories, reference)
+  benchmark.py   multi-generator runs, pass@k, bootstrap CIs, leaderboard
   pipeline.py orchestration;  worker.py  queue consumer;  db.py  persistence
 sandbox/      runner image + offline Semgrep rules
 frontend/     React dashboard
-examples/     a task with visible/hidden suites, benchmarks and 3 candidates
+tasks/        task library: specs, visible/hidden suites, benchmarks, reference solutions
+examples/     sample .codejudge.yml for the GitHub integration
 ```

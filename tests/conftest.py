@@ -12,7 +12,7 @@ from codejudge.loader import load_candidate, load_task
 from codejudge.models import Task
 
 ROOT = Path(__file__).resolve().parents[1]
-EXAMPLE = ROOT / "examples" / "interval-merge"
+EXAMPLE = ROOT / "tasks" / "interval-merge"
 
 
 @pytest.fixture(autouse=True)

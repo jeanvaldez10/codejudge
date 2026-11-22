@@ -1,0 +1,28 @@
+id: roman-numerals
+title: Roman numeral conversion
+module: solution
+description: |
+  Implement two functions in `solution.py`:
+
+  - `to_roman(n: int) -> str`: convert an integer in 1..3999 to its canonical
+    uppercase Roman numeral (subtractive notation, e.g. 4 -> "IV",
+    1994 -> "MCMXCIV"). Raise `ValueError` for integers outside 1..3999 and
+    `TypeError` for anything that is not an `int` (including `bool`).
+  - `from_roman(s: str) -> int`: parse a canonical uppercase Roman numeral.
+    Only canonical forms are valid: raise `ValueError` for non-canonical or
+    malformed input such as "IIII", "VX", "IC", "MMMM", "", lowercase "iv" or
+    surrounding whitespace.
+limits: {timeout_seconds: 30}
+tests:
+  - {name: test_basic, file: tests/test_basic.py, category: correctness}
+  - {name: test_hidden_correctness, file: tests/test_hidden_correctness.py, category: correctness, hidden: true}
+  - {name: test_hidden_edge_cases, file: tests/test_hidden_edge_cases.py, category: edge_case, hidden: true}
+  - {name: test_hidden_roundtrip, file: tests/test_hidden_roundtrip.py, category: integration, hidden: true}
+benchmarks:
+  - name: full_range_roundtrip
+    setup: |
+      def bench(m):
+          for i in range(1, 4000):
+              m.from_roman(m.to_roman(i))
+    repeat: 5
+    time_budget_ms: 60

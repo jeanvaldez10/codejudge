@@ -1,0 +1,35 @@
+id: csv-aggregate
+title: Group-by aggregation over CSV text
+module: solution
+entrypoint: aggregate
+description: |
+  Implement `aggregate(csv_text: str, key: str, value: str) -> dict[str, float]`
+  in `solution.py`.
+
+  `csv_text` is RFC 4180 CSV whose first row is a header. Return the sum of
+  column `value` grouped by column `key`, as a dict whose keys appear in
+  first-seen order.
+
+  - Quoted fields may contain commas, doubled quotes (`""`) and newlines.
+    Both `\n` and `\r\n` line endings occur.
+  - Blank lines are ignored. Rows whose `value` cell is empty are skipped.
+  - Numbers may have surrounding whitespace (" 3.5 ").
+  - Empty input, or a header with no data rows, returns `{}`.
+  - Raise `ValueError` if `key` or `value` is not a header column, if a row
+    has fewer cells than the header, or if a non-empty value is not a number.
+limits: {timeout_seconds: 30, memory_mb: 512}
+tests:
+  - {name: test_basic, file: tests/test_basic.py, category: correctness}
+  - {name: test_hidden_correctness, file: tests/test_hidden_correctness.py, category: correctness, hidden: true}
+  - {name: test_hidden_edge_cases, file: tests/test_hidden_edge_cases.py, category: edge_case, hidden: true}
+benchmarks:
+  - name: 200k_rows
+    setup: |
+      import random
+      rng = random.Random(3)
+      lines = ["region,product,amount"]
+      for i in range(200_000):
+          lines.append(f'r{rng.randrange(50)},"p, {i % 7}",{rng.randrange(1000) / 10}')
+      args = ("\n".join(lines), "region", "amount")
+    repeat: 3
+    time_budget_ms: 600

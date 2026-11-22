@@ -1,0 +1,36 @@
+id: lru-cache
+title: LRU cache
+module: solution
+description: |
+  Implement a class `LRUCache` in `solution.py`.
+
+  - `LRUCache(capacity: int)`: raise `ValueError` if `capacity < 1`.
+  - `get(key, default=None)`: return the stored value (or `default` if the key
+    is absent). A successful `get` marks the key as most recently used.
+  - `put(key, value)`: insert or update the key and mark it as most recently
+    used. If this makes the cache exceed its capacity, evict the least
+    recently used key.
+  - `__len__()`: number of stored keys.
+  - `__contains__(key)`: membership test that does NOT change recency.
+
+  `get` and `put` must run in O(1) average time.
+limits: {timeout_seconds: 30, memory_mb: 512}
+tests:
+  - {name: test_basic, file: tests/test_basic.py, category: correctness}
+  - {name: test_hidden_correctness, file: tests/test_hidden_correctness.py, category: correctness, hidden: true}
+  - {name: test_hidden_edge_cases, file: tests/test_hidden_edge_cases.py, category: edge_case, hidden: true}
+benchmarks:
+  - name: 300k_mixed_ops
+    setup: |
+      import random
+      rng = random.Random(7)
+      ops = [(rng.random() < 0.5, rng.randrange(20_000)) for _ in range(300_000)]
+      def bench(m):
+          c = m.LRUCache(5_000)
+          for is_put, k in ops:
+              if is_put:
+                  c.put(k, k)
+              else:
+                  c.get(k)
+    repeat: 5
+    time_budget_ms: 400

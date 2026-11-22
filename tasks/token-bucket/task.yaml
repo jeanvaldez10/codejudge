@@ -1,0 +1,34 @@
+id: token-bucket
+title: Token bucket rate limiter
+module: solution
+description: |
+  Implement a class `TokenBucket` in `solution.py`.
+
+  - `TokenBucket(rate: float, capacity: float, clock=time.monotonic)`:
+    tokens refill continuously at `rate` per second up to `capacity`. The
+    bucket starts full. `clock` is a zero-argument callable returning seconds.
+    Raise `ValueError` unless `rate > 0` and `capacity > 0`.
+  - `allow(n: float = 1) -> bool`: if at least `n` tokens are available,
+    consume them and return `True`; otherwise consume nothing and return
+    `False`. Raise `ValueError` if `n <= 0`.
+  - `tokens` (read-only property): tokens available now.
+
+  If the clock ever goes backwards, treat the elapsed time as zero.
+limits: {timeout_seconds: 20}
+tests:
+  - {name: test_basic, file: tests/test_basic.py, category: correctness}
+  - {name: test_hidden_correctness, file: tests/test_hidden_correctness.py, category: correctness, hidden: true}
+  - {name: test_hidden_edge_cases, file: tests/test_hidden_edge_cases.py, category: edge_case, hidden: true}
+benchmarks:
+  - name: 200k_allow_calls
+    setup: |
+      def bench(m):
+          t = [0.0]
+          def clock():
+              t[0] += 0.0001
+              return t[0]
+          b = m.TokenBucket(1000, 50, clock=clock)
+          for _ in range(200_000):
+              b.allow()
+    repeat: 5
+    time_budget_ms: 250

@@ -12,3 +12,4 @@ frontend/dist/
 codejudge-report.md
 .env
 *.tsbuildinfo
+runs/

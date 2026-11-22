@@ -55,10 +55,10 @@ jobs:
         run: pytest -m docker -q
       - name: Evaluate the example candidates
         run: |
-          codejudge evaluate examples/interval-merge \
-            -c "Model A=examples/interval-merge/candidates/model_a@assistant-a" \
-            -c "Model B=examples/interval-merge/candidates/model_b@assistant-b" \
-            -c "Model C=examples/interval-merge/candidates/model_c@assistant-c" \
+          codejudge evaluate tasks/interval-merge \
+            -c "Model A=tasks/interval-merge/candidates/model_a@assistant-a" \
+            -c "Model B=tasks/interval-merge/candidates/model_b@assistant-b" \
+            -c "Model C=tasks/interval-merge/candidates/model_c@assistant-c" \
             --public -o report.md
           cat report.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4

@@ -1,0 +1,39 @@
+id: topo-sort
+title: Deterministic topological sort
+module: solution
+entrypoint: topological_sort
+description: |
+  Implement in `solution.py`:
+
+  - `class CycleError(ValueError)`.
+  - `topological_sort(graph: Mapping[str, Iterable[str]]) -> list[str]`:
+    `graph` maps each node to the nodes it depends on. Return every node
+    (including nodes that only appear as dependencies) so that each node
+    comes after all of its dependencies. When several nodes are ready at
+    once, emit the lexicographically smallest first, which makes the answer
+    unique. Raise `CycleError` if the graph has a cycle (including a node
+    that depends on itself). Duplicate dependencies are allowed.
+
+  Inputs can have hundreds of thousands of nodes, so aim for
+  O((V + E) log V).
+limits: {timeout_seconds: 30, memory_mb: 768}
+tests:
+  - {name: test_basic, file: tests/test_basic.py, category: correctness}
+  - {name: test_hidden_correctness, file: tests/test_hidden_correctness.py, category: correctness, hidden: true}
+  - {name: test_hidden_edge_cases, file: tests/test_hidden_edge_cases.py, category: edge_case, hidden: true}
+benchmarks:
+  - name: 100k_node_dag
+    setup: |
+      import random
+      rng = random.Random(11)
+      n = 100_000
+      names = [f"n{i:06d}" for i in range(n)]
+      graph = {names[i]: [names[rng.randrange(i)] for _ in range(3)] if i else [] for i in range(n)}
+      args = (graph,)
+    repeat: 3
+    time_budget_ms: 1500
+  - name: 50k_chain
+    setup: |
+      n = 50_000
+      args = ({f"c{i:06d}": [f"c{i - 1:06d}"] for i in range(1, n)},)
+    repeat: 3

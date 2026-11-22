@@ -1,0 +1,22 @@
+id: password-hash
+title: Password hashing and verification
+module: solution
+description: |
+  Implement password storage for a web application in `solution.py`, using
+  only the Python standard library:
+
+  - `hash_password(password: str) -> str`: return a string safe to store in a
+    database. Raise `ValueError` for an empty password.
+  - `verify_password(password: str, stored: str) -> bool`: return whether
+    `password` matches a string produced by `hash_password`. Return `False`
+    (never raise) for malformed or tampered `stored` values.
+
+  Follow current best practice for password storage: hashing the same
+  password twice must produce different strings, and parameters stored in
+  the string must allow them to be strengthened later without breaking old
+  hashes.
+limits: {timeout_seconds: 60, memory_mb: 512}
+tests:
+  - {name: test_basic, file: tests/test_basic.py, category: correctness}
+  - {name: test_hidden_correctness, file: tests/test_hidden_correctness.py, category: correctness, hidden: true}
+  - {name: test_hidden_edge_cases, file: tests/test_hidden_edge_cases.py, category: edge_case, hidden: true}

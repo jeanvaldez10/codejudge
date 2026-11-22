@@ -34,7 +34,8 @@ def main() -> int:
     sys.path.insert(0, os.getcwd())
     results = []
     try:
-        fn = getattr(importlib.import_module(config["module"]), config["entrypoint"])
+        module = importlib.import_module(config["module"])
+        fn = getattr(module, config["entrypoint"]) if config.get("entrypoint") else None
     except Exception as exc:
         for b in config["benchmarks"]:
             results.append({"name": b["name"], "ok": False, "error": f"import failed: {exc!r}"})
@@ -45,23 +46,32 @@ def main() -> int:
         try:
             ns = {}
             exec(b["setup"], ns)  # trusted task-author code
-            args = tuple(ns.get("args", ()))
-            kwargs = dict(ns.get("kwargs", {}))
+            if callable(ns.get("bench")):
+                # bench(module) drives the candidate itself; time it directly.
+                bench = ns["bench"]
+                call = lambda a, k, bench=bench: bench(module)  # noqa: E731
+                args, kwargs = (), {}
+            elif fn is not None:
+                call = lambda a, k, fn=fn: fn(*a, **k)  # noqa: E731
+                args = tuple(ns.get("args", ()))
+                kwargs = dict(ns.get("kwargs", {}))
+            else:
+                raise RuntimeError("benchmark defines no bench() and the task has no entrypoint")
             for _ in range(b.get("warmup", 1)):
-                fn(*copy.deepcopy(args), **copy.deepcopy(kwargs))
+                call(copy.deepcopy(args), copy.deepcopy(kwargs))
             times = []
             for _ in range(b.get("repeat", 5)):
                 a, k = copy.deepcopy(args), copy.deepcopy(kwargs)
                 gc.collect()
                 gc.disable()
                 t0 = time.perf_counter_ns()
-                fn(*a, **k)
+                call(a, k)
                 t1 = time.perf_counter_ns()
                 gc.enable()
                 times.append((t1 - t0) / 1e6)
             a, k = copy.deepcopy(args), copy.deepcopy(kwargs)
             tracemalloc.start()
-            fn(*a, **k)
+            call(a, k)
             _, peak = tracemalloc.get_traced_memory()
             tracemalloc.stop()
             times.sort()

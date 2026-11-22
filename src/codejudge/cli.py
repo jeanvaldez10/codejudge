@@ -1,8 +1,10 @@
 """Command line interface.
 
-    codejudge evaluate examples/interval-merge \
-        -c "Model A=examples/interval-merge/candidates/model_a" \
-        -c "Model B=examples/interval-merge/candidates/model_b" --format md
+    codejudge evaluate tasks/interval-merge \
+        -c "Model A=tasks/interval-merge/candidates/model_a" \
+        -c "Model B=tasks/interval-merge/candidates/model_b" --format md
+    codejudge generate runs/r1 -g anthropic:claude-opus-5-5 -g dir:copilot=path --samples 3
+    codejudge bench runs/r1   # evaluate every sample, print the leaderboard
     codejudge serve      # REST API
     codejudge worker     # job runner (executes sandboxed evaluations)
 """
@@ -12,6 +14,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import threading
 
 from codejudge.models import StageResult
 
@@ -72,6 +75,72 @@ def _push_task(args: argparse.Namespace) -> int:
     return 0
 
 
+_print_lock = threading.Lock()
+
+
+def _progress(msg: str) -> None:
+    with _print_lock:  # generation reports progress from worker threads
+        print(f"  {msg}", file=sys.stderr, flush=True)
+
+
+def _generate(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from codejudge.benchmark import generate_run
+    from codejudge.generation import parse_generator
+    from codejudge.loader import discover_tasks
+
+    task_dirs = [d for t in args.tasks for d in discover_tasks(t)]
+    if args.only:
+        task_dirs = [d for d in task_dirs if d.name in set(args.only.split(","))]
+    if not task_dirs:
+        print("no tasks found", file=sys.stderr)
+        return 2
+    by_id = {d.name: d for d in task_dirs}
+    generators = [parse_generator(g, by_id) for g in args.generator]
+    manifest = generate_run(
+        Path(args.run),
+        task_dirs,
+        generators,
+        args.samples,
+        parallel=args.parallel,
+        force=args.force,
+        stages=args.stages.split(",") if args.stages else None,
+        progress=_progress,
+    )
+    print(
+        f"{len(manifest.tasks)} task(s) x {len(manifest.generators)} generator(s) "
+        f"x {manifest.samples} sample(s) in {args.run}"
+    )
+    return 0
+
+
+def _bench(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from codejudge.benchmark import evaluate_run
+    from codejudge.sandbox import get_sandbox
+
+    evaluate_run(
+        Path(args.run), get_sandbox(), parallel=args.parallel, force=args.force, progress=_progress
+    )
+    return _leaderboard(args)
+
+
+def _leaderboard(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from codejudge.benchmark import build_leaderboard, render_leaderboard
+
+    lb = build_leaderboard(Path(args.run))
+    out = render_leaderboard(lb) if args.format == "md" else lb.model_dump_json(indent=2)
+    if args.output:
+        Path(args.output).write_text(out, encoding="utf-8")
+    else:
+        print(out)
+    return 0
+
+
 def _serve(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -103,6 +172,37 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("-o", "--output")
     e.add_argument("--fail-under", type=float, help="exit 1 if best overall score is below this")
     e.set_defaults(fn=_evaluate)
+
+    g = sub.add_parser("generate", help="generate candidates for a task library")
+    g.add_argument("run", help="run directory (created or extended)")
+    g.add_argument("--tasks", nargs="+", default=["tasks"], help="task dirs or library roots")
+    g.add_argument("--only", help="comma-separated task ids to include")
+    g.add_argument(
+        "-g",
+        "--generator",
+        action="append",
+        required=True,
+        help="anthropic:<model>[:<effort>], dir:<name>=<path>, or reference",
+    )
+    g.add_argument("--samples", type=int, default=1, help="samples per task per generator")
+    g.add_argument("--parallel", type=int, default=4)
+    g.add_argument("--stages", help="stages to run at evaluation time (default: all)")
+    g.add_argument("--force", action="store_true", help="regenerate existing samples")
+    g.set_defaults(fn=_generate)
+
+    b = sub.add_parser("bench", help="evaluate a generated run and print its leaderboard")
+    b.add_argument("run")
+    b.add_argument("--parallel", type=int, default=2)
+    b.add_argument("--force", action="store_true", help="re-evaluate tasks with results")
+    b.add_argument("--format", choices=["md", "json"], default="md")
+    b.add_argument("-o", "--output")
+    b.set_defaults(fn=_bench)
+
+    lb = sub.add_parser("leaderboard", help="aggregate an evaluated run")
+    lb.add_argument("run")
+    lb.add_argument("--format", choices=["md", "json"], default="md")
+    lb.add_argument("-o", "--output")
+    lb.set_defaults(fn=_leaderboard)
 
     t = sub.add_parser("push-task", help="register/update a task on a CodeJudge server")
     t.add_argument("task")
