@@ -92,7 +92,8 @@ def evaluate(
     notes = [
         "LLM review is advisory and capped at "
         f"{WEIGHTS['llm_quality']:.0%} of the overall score; it cannot override failed gates.",
-        "Performance without a time budget is scored relative to the fastest candidate.",
+        "Performance without a time budget is scored relative to the fastest "
+        "candidate in this evaluation and is not comparable across submissions.",
     ]
     if any(
         s.stage == "llm_review" and s.status.value == "skipped" for r in reports for s in r.stages

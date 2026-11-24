@@ -8,7 +8,14 @@ from codejudge.models import (
     TestCategory,
     Verdict,
 )
-from codejudge.scoring import apply_relative_performance, build_scorecard, finalize, rank
+from codejudge.scoring import (
+    INTEGRITY_BUILD_OVERALL,
+    OTHER_GATE_CAP,
+    apply_relative_performance,
+    build_scorecard,
+    finalize,
+    rank,
+)
 
 
 def tc(cat, ok, hidden=False):
@@ -76,3 +83,136 @@ def test_rank_puts_failures_last():
         label="b", verdict=Verdict.failed, scorecard=Scorecard(overall=90), stages=[]
     )
     assert rank([bad, good]) == ["g", "b"]
+
+
+def _high_score_stages(tests):
+    """Signals whose weighted total sits well above the 49 cap."""
+    return [
+        stage("visible_tests", tests=tests),
+        stage("static_analysis", score=100),
+        stage("performance", score=100),
+        stage("llm_review", score=100),
+    ]
+
+
+def test_gate_caps_are_zero_and_forty_nine():
+    assert INTEGRITY_BUILD_OVERALL == 0.0
+    assert OTHER_GATE_CAP == 49.0
+
+
+def test_build_and_integrity_failure_zero_overall():
+    tests = [tc(TestCategory.correctness, True)]
+    security = stage("security", score=100)
+    for gated in (
+        stage("build", status=StageStatus.failed, score=0),
+        stage("integrity", status=StageStatus.failed, score=0),
+    ):
+        stages = [gated, security, *_high_score_stages(tests)]
+        if gated.stage != "build":
+            stages.insert(0, stage("build"))
+        r = report("a", stages)
+        finalize(r)
+        assert r.verdict == Verdict.failed
+        assert gated.stage in r.gates_failed
+        assert r.scorecard.overall == 0.0
+
+
+def test_build_failure_outranks_the_security_cap():
+    tests = [tc(TestCategory.correctness, True)]
+    r = report(
+        "a",
+        [
+            stage("integrity", status=StageStatus.failed, score=0),
+            stage("build", status=StageStatus.failed, score=0),
+            stage("security", status=StageStatus.failed, score=0),
+            *_high_score_stages(tests),
+        ],
+    )
+    finalize(r)
+    assert r.scorecard.overall == 0.0
+    assert set(r.gates_failed) >= {"integrity", "build", "security"}
+
+
+def test_security_and_correctness_gates_cap_at_49():
+    passing = [tc(TestCategory.correctness, True)]
+    security = report(
+        "sec",
+        [
+            stage("build"),
+            stage("security", status=StageStatus.failed, score=0),
+            *_high_score_stages(passing),
+        ],
+    )
+    finalize(security)
+    assert security.verdict == Verdict.failed
+    assert security.gates_failed == ["security"]
+    assert security.scorecard.overall == 49.0
+
+    weak = [tc(TestCategory.correctness, False)] * 3 + [tc(TestCategory.correctness, True)]
+    correctness = report(
+        "cor",
+        [
+            stage("build"),
+            stage("security", score=100),
+            stage("visible_tests", status=StageStatus.failed, tests=weak),
+            stage("static_analysis", score=100),
+            stage("performance", score=100),
+            stage("llm_review", score=100),
+        ],
+    )
+    finalize(correctness)
+    assert "functional_correctness" in correctness.gates_failed
+    assert correctness.scorecard.functional_correctness == 25.0
+    assert correctness.scorecard.overall == 49.0
+
+
+def test_gate_cap_does_not_raise_a_low_score():
+    r = report(
+        "a",
+        [
+            stage("build"),
+            stage("static_analysis", score=20),
+            stage("security", status=StageStatus.failed, score=0),
+        ],
+    )
+    finalize(r)
+    assert r.gates_failed == ["security"]
+    assert r.scorecard.overall == 10.0
+
+
+def test_rank_prefers_clean_pass_over_higher_warned_score():
+    clean = CandidateReport(
+        label="clean",
+        verdict=Verdict.passed,
+        scorecard=Scorecard(overall=60, functional_correctness=70),
+        stages=[],
+    )
+    warned = CandidateReport(
+        label="warned",
+        verdict=Verdict.passed_with_warnings,
+        scorecard=Scorecard(overall=95, functional_correctness=100),
+        stages=[],
+    )
+    failed = CandidateReport(
+        label="failed",
+        verdict=Verdict.failed,
+        scorecard=Scorecard(overall=99, functional_correctness=100),
+        stages=[],
+    )
+    assert rank([warned, failed, clean]) == ["clean", "warned", "failed"]
+
+
+def test_rank_breaks_overall_ties_on_functional_correctness():
+    low = CandidateReport(
+        label="low",
+        verdict=Verdict.passed,
+        scorecard=Scorecard(overall=80, functional_correctness=60),
+        stages=[],
+    )
+    high = CandidateReport(
+        label="high",
+        verdict=Verdict.passed,
+        scorecard=Scorecard(overall=80, functional_correctness=90),
+        stages=[],
+    )
+    assert rank([low, high]) == ["high", "low"]

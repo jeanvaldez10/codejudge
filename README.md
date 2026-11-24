@@ -43,6 +43,9 @@ intervals and is quadratic, so its benchmark times out.</sub>
 | 8 | `performance` | Median / p95 / peak memory per benchmark, each in its own container and time limit; inputs deep-copied per run so in-place mutation can't skew timings | sandbox |
 | 9 | `llm_review` | Claude scores a rubric (readability, maintainability, idioms, error handling, algorithmic reasoning) from the code plus the deterministic evidence | worker (no code execution) |
 
+A requested subset of stages still runs `integrity` and `build` first. Later
+stages depend on them.
+
 ### Scoring and gates
 
 * Weighted score: correctness 35%, edge cases 15%, integration 5%, own-test
@@ -50,10 +53,16 @@ intervals and is quadratic, so its benchmark times out.</sub>
   Weights of unavailable signals are redistributed.
 * **Hard gates** override the weighted score: build failure, integrity
   violation, any high-severity security finding, or < 50% functional
-  correctness → verdict `fail`. A gated candidate's score is capped at 49, so
-  it can never outrank a passing one.
+  correctness → verdict `fail`. Build or integrity failure sets the overall
+  score to 0. A security or correctness gate caps the overall score at 49, so
+  a gated candidate cannot outrank a passing one.
+* Rank is verdict first (`pass`, then `pass_with_warnings`, then `fail`),
+  then overall score, then functional correctness. A clean pass at 60
+  outranks a warned pass at 95.
 * Performance with a `time_budget_ms` is scored against the budget; without
-  one it is scored relative to the fastest candidate in the same run.
+  one it is scored relative to the fastest candidate in the same evaluation.
+  That score belongs to the cohort: it is not comparable across submissions
+  or runs.
 * The LLM never sees hidden tests, can't change a gate, and is told to treat
   the code as untrusted data. Prompt-injection text in the code is flagged by
   the integrity stage too.

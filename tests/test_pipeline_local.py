@@ -51,6 +51,7 @@ def test_full_comparison(fast_task, candidate_a, candidate_b, candidate_c):
 
     md = render_markdown(report)
     assert "| Functional correctness | 100% |" in md
+    assert any("not comparable across submissions" in note for note in report.notes)
 
 
 def test_hidden_failures_are_redacted(fast_task, candidate_b):

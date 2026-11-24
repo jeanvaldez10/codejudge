@@ -58,6 +58,8 @@ Nominal weights:
 
 Signals that did not run are left out and the remaining weights are renormalized. Build or integrity failure forces overall to 0. Any other gate caps overall at 49, so a gated candidate cannot outrank a passing one.
 
+Unbudgeted performance is relative to the fastest candidate in the same evaluation. It is not comparable across submissions or runs.
+
 Functional correctness is the pass rate of tests in category `correctness`. Edge-case and integration rates are separate. A task with no `correctness` suites falls back to the pass rate of all task tests for the functional-correctness signal.
 
 ### Verdict and rank

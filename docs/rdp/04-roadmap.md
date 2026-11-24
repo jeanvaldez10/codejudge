@@ -20,7 +20,15 @@ In scope:
 
 Out of scope: auth defaults, leases, migrations, dashboard token UI, webhook `fail-under`, any new language or sandbox backend.
 
-Exit: `pytest -m "not docker"` and the existing Docker isolation tests pass. A fixture candidate whose `test_*.py` reads `_cj_tests/` does not get hidden source into the public report, and the integrity stage fails it.
+M1 lands as separate pull requests. A later slice stays unstarted until it is named.
+
+1. **Scoring contract lock.** Pin D1 (overall 0 for build and integrity, cap 49 for security and correctness) and verdict-first rank. The README states those caps, the rank order, that a stage subset still runs integrity and build, and that relative scores apply only inside one cohort.
+2. **Incomplete verdict (D2).** A stage `error` on integrity, build, security, tests, or static analysis yields `incomplete`. Overall stays unset. pass@k drops the sample from both the solved count and the attempt count. Dashboard and Markdown render the verdict.
+3. **Effective weights (D4).** Each candidate stores the renormalized map actually used. Nominal `weights` stay on the report. Dashboard and Markdown show the effective map when it differs.
+4. **Hidden-test containment (D5).** Materialize only the suites the current command may see. Scan candidate test files. Redact hidden-suite lines that leak into candidate-test logs, and fail integrity when that happens.
+5. **Shared limits (D9, D12).** One file-size limit, enforced on `Candidate`. A task with tests must include a `correctness` suite.
+
+Exit: `pytest -m "not docker"` and the existing Docker isolation tests pass. A fixture candidate whose `test_*.py` reads `_cj_tests/` does not get hidden source into the public report, and the integrity stage fails it. The exit is the bar for slice 4, not for slice 1.
 
 ### M2 — Operator defaults
 

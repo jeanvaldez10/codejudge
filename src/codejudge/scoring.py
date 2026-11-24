@@ -7,6 +7,8 @@ Principles:
 * Hard gates override the weighted score: a candidate that does not build,
   tampers with the harness, ships a high-severity vulnerability, or fails
   most functional tests is a ``fail`` no matter how polished it looks.
+  Build and integrity failure set the overall score to 0. Security and
+  correctness gates cap it at 49 so a near-miss stays under every pass.
 * Performance without an explicit budget is scored relative to the fastest
   candidate in the same run.
 """
@@ -36,6 +38,10 @@ WEIGHTS: dict[str, float] = {
     "llm_quality": 0.10,
 }
 CORRECTNESS_GATE = 50.0
+# No partial credit when the candidate did not build or tampered with the harness.
+INTEGRITY_BUILD_OVERALL = 0.0
+# A security or correctness gate cannot outrank a passing candidate.
+OTHER_GATE_CAP = 49.0
 
 
 def _rate(tests: list[TestCaseResult], category: TestCategory | None = None) -> float | None:
@@ -134,9 +140,9 @@ def finalize(rep: CandidateReport) -> None:
     total_w = sum(WEIGHTS[k] for k in available)
     overall = sum(WEIGHTS[k] * v for k, v in available.items()) / total_w if total_w else 0.0
     if "build" in gates or "integrity" in gates:
-        overall = 0.0
+        overall = INTEGRITY_BUILD_OVERALL
     elif gates:
-        overall = min(overall, 49.0)  # a gated candidate can never outrank a passing one
+        overall = min(overall, OTHER_GATE_CAP)
     sc.overall = round(overall, 2)
     rep.gates_failed = gates
 
