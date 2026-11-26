@@ -261,6 +261,7 @@ class Verdict(StrEnum):
     passed = "pass"
     passed_with_warnings = "pass_with_warnings"
     failed = "fail"
+    incomplete = "incomplete"
 
 
 class Scorecard(BaseModel):
@@ -276,7 +277,8 @@ class Scorecard(BaseModel):
     performance_median_ms: float | None = None
     performance_score: float | None = None
     llm_quality: float | None = None
-    overall: float = 0.0
+    # Unset when the verdict is incomplete: an outage is not a measured zero.
+    overall: float | None = None
 
 
 class CandidateReport(BaseModel):

@@ -64,6 +64,40 @@ def test_tie_is_not_significant(tmp_path):
     assert any("Only 4 tasks" in n for n in lb.notes)
 
 
+def test_incomplete_is_omitted_from_pass_at_k(tmp_path):
+    run = tmp_path / "run"
+    (run / "results").mkdir(parents=True)
+    tasks = {"only": "unused"}
+    (run / "manifest.json").write_text(
+        Manifest(
+            created_at="x", tasks=tasks, generators=["gen"], samples=2
+        ).model_dump_json()
+    )
+    solved = CandidateReport(
+        label="gen#1",
+        verdict=Verdict.passed,
+        scorecard=Scorecard(overall=80),
+        stages=[StageResult(stage="hidden_tests", status=StageStatus.passed)],
+    )
+    # Tests passed, which would count as solved if the outage were ignored.
+    outage = CandidateReport(
+        label="gen#2",
+        verdict=Verdict.incomplete,
+        scorecard=Scorecard(),
+        stages=[StageResult(stage="static_analysis", status=StageStatus.error)],
+    )
+    report = EvaluationReport(
+        task_id="only", task_title="only", candidates=[solved, outage], ranking=[], weights={}
+    )
+    (run / "results" / "only.json").write_text(json.dumps(report.model_dump(mode="json")))
+    lb = build_leaderboard(run, n_boot=20)
+    gen = lb.generators[0]
+    cell = lb.per_task["only"]["gen"]
+    assert gen.pass_at_1 == 1.0
+    assert cell.solved == 1 and cell.samples == 1 and cell.mean_score == 80
+    assert any("incomplete" in note for note in lb.notes)
+
+
 def test_bootstrap_is_deterministic(tmp_path):
     run = _write_run(tmp_path, 12, lambda i: i % 2 == 0, lambda i: i % 4 == 0)
     a = build_leaderboard(run, n_boot=300, seed=1).model_dump()

@@ -9,6 +9,8 @@ Principles:
   most functional tests is a ``fail`` no matter how polished it looks.
   Build and integrity failure set the overall score to 0. Security and
   correctness gates cap it at 49 so a near-miss stays under every pass.
+  A stage ``error`` on integrity, build, tests, static analysis, or security
+  is verdict ``incomplete`` and leaves the overall score unset.
 * Performance without an explicit budget is scored relative to the fastest
   candidate in the same run.
 """
@@ -42,6 +44,19 @@ CORRECTNESS_GATE = 50.0
 INTEGRITY_BUILD_OVERALL = 0.0
 # A security or correctness gate cannot outrank a passing candidate.
 OTHER_GATE_CAP = 49.0
+# A crash here is an outage. Performance and the LLM review are not in this set:
+# a missing benchmark or review stays a dropped signal, not an incomplete run.
+INCOMPLETE_ON_ERROR = frozenset(
+    {
+        "integrity",
+        "build",
+        "visible_tests",
+        "hidden_tests",
+        "candidate_tests",
+        "static_analysis",
+        "security",
+    }
+)
 
 
 def _rate(tests: list[TestCaseResult], category: TestCategory | None = None) -> float | None:
@@ -128,12 +143,20 @@ def finalize(rep: CandidateReport) -> None:
     gates: list[str] = []
     if stages.get("integrity") and stages["integrity"].status == StageStatus.failed:
         gates.append("integrity")
-    if stages.get("build") and stages["build"].status != StageStatus.passed:
+    build = stages.get("build")
+    # ``error`` is an outage, not a failed build. It must not become a measured 0.
+    if build is not None and build.status not in (StageStatus.passed, StageStatus.error):
         gates.append("build")
     if sc.security == "fail":
         gates.append("security")
     if sc.functional_correctness is not None and sc.functional_correctness < CORRECTNESS_GATE:
         gates.append("functional_correctness")
+
+    rep.gates_failed = gates
+    if any(s.stage in INCOMPLETE_ON_ERROR and s.status == StageStatus.error for s in rep.stages):
+        sc.overall = None
+        rep.verdict = Verdict.incomplete
+        return
 
     values = {k: getattr(sc, k) for k in WEIGHTS}
     available = {k: v for k, v in values.items() if v is not None}
@@ -144,7 +167,6 @@ def finalize(rep: CandidateReport) -> None:
     elif gates:
         overall = min(overall, OTHER_GATE_CAP)
     sc.overall = round(overall, 2)
-    rep.gates_failed = gates
 
     if gates:
         rep.verdict = Verdict.failed
@@ -159,14 +181,26 @@ def finalize(rep: CandidateReport) -> None:
 
 
 def rank(reports: list[CandidateReport]) -> list[str]:
-    order = {Verdict.passed: 0, Verdict.passed_with_warnings: 1, Verdict.failed: 2}
+    # ``incomplete`` shares the fail tier. An unset score sorts after every
+    # measured score, including 0, so an outage does not outrank a real zero.
+    order = {
+        Verdict.passed: 0,
+        Verdict.passed_with_warnings: 1,
+        Verdict.failed: 2,
+        Verdict.incomplete: 2,
+    }
+
+    def overall_key(rep: CandidateReport) -> float:
+        overall = rep.scorecard.overall
+        return overall if overall is not None else float("-inf")
+
     return [
         r.label
         for r in sorted(
             reports,
             key=lambda r: (
                 order[r.verdict],
-                -r.scorecard.overall,
+                -overall_key(r),
                 -(r.scorecard.functional_correctness or 0),
             ),
         )
