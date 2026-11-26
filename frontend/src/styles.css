@@ -92,6 +92,7 @@ table.compare { border-collapse: separate; border-spacing: 0; width: 100%; backg
 .verdict.pass, .badge.passed { background: var(--good-bg); color: var(--good); }
 .verdict.pass_with_warnings, .badge.warning, .sev.medium { background: var(--warn-bg); color: var(--warn); }
 .verdict.fail, .badge.failed, .badge.error, .sev.high, .sev.critical { background: var(--bad-bg); color: var(--bad); }
+.verdict.incomplete { background: var(--warn-bg); color: var(--warn); }
 .badge.skipped, .sev.low, .sev.info { background: var(--code-bg); color: var(--muted); }
 .badge { margin: 0 8px 0 0; min-width: 64px; text-align: center; }
 .candidate { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin: 14px 0; padding: 10px 14px; }

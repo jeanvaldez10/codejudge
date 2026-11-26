@@ -125,15 +125,15 @@ def post_results(github: dict[str, Any], report_json: dict[str, Any], submission
     report = redact_hidden(EvaluationReport.model_validate(report_json))
     best = next(c for c in report.candidates if c.label == report.ranking[0])
     state = "success" if best.verdict.value != "fail" else "failure"
+    overall = best.scorecard.overall
+    shown = "n/a" if overall is None else f"{overall:.1f}"
     with _client() as client:
         client.post(
             f"/repos/{github['repo']}/statuses/{github['sha']}",
             json={
                 "state": state,
                 "context": "codejudge",
-                "description": f"best: {best.label} ({best.scorecard.overall:.1f}, {best.verdict.value})"[
-                    :140
-                ],
+                "description": f"best: {best.label} ({shown}, {best.verdict.value})"[:140],
             },
         ).raise_for_status()
         if github.get("pr_number"):

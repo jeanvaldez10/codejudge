@@ -118,7 +118,7 @@ function SubmissionView({ sub }: { sub: Submission }) {
 function ReportView({ report, id }: { report: Report; id: string }) {
   const cs = report.candidates;
   const rows: [string, (c: CandidateReport) => React.ReactNode, (c: CandidateReport) => string][] = [
-    ["Overall", (c) => c.scorecard.overall.toFixed(1), (c) => tone(c.scorecard.overall)],
+    ["Overall", (c) => (c.scorecard.overall == null ? "n/a" : c.scorecard.overall.toFixed(1)), (c) => tone(c.scorecard.overall)],
     ["Functional correctness", (c) => pct(c.scorecard.functional_correctness), (c) => tone(c.scorecard.functional_correctness)],
     ["Edge-case handling", (c) => pct(c.scorecard.edge_case_handling), (c) => tone(c.scorecard.edge_case_handling)],
     ["Integration", (c) => pct(c.scorecard.integration), (c) => tone(c.scorecard.integration)],
@@ -204,7 +204,10 @@ function CandidateDetail({ c }: { c: CandidateReport }) {
     <details className="candidate">
       <summary>
         <strong>{c.label}</strong> <span className={`verdict ${c.verdict}`}>{c.verdict.replace(/_/g, " ")}</span>
-        <span className="muted small"> overall {c.scorecard.overall.toFixed(1)}</span>
+        <span className="muted small">
+          {" "}
+          overall {c.scorecard.overall == null ? "n/a" : c.scorecard.overall.toFixed(1)}
+        </span>
       </summary>
       <div className="stages">
         {c.stages.map((s) => (

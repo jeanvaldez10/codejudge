@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 
 from codejudge.generation import GenerationResult, Generator, to_candidate, write_sample
 from codejudge.loader import load_candidate, load_task
-from codejudge.models import Candidate, CandidateReport, EvaluationReport, StageStatus
+from codejudge.models import Candidate, CandidateReport, EvaluationReport, StageStatus, Verdict
 from codejudge.pipeline import evaluate
 from codejudge.sandbox import Sandbox
 
@@ -207,7 +207,7 @@ def pass_at_k(n: int, c: int, k: int) -> float:
 
 def solved(rep: CandidateReport) -> bool:
     """Strict success: every task test passed (visible and hidden) and no gate failed."""
-    if rep.gates_failed:
+    if rep.verdict == Verdict.incomplete or rep.gates_failed:
         return False
     test_stages = [s for s in rep.stages if s.stage in ("visible_tests", "hidden_tests")]
     ran = [s for s in test_stages if s.status != StageStatus.skipped]
@@ -217,7 +217,7 @@ def solved(rep: CandidateReport) -> bool:
 class TaskCell(BaseModel):
     solved: int
     samples: int
-    mean_score: float
+    mean_score: float | None = None
 
 
 class GeneratorStats(BaseModel):
@@ -225,11 +225,11 @@ class GeneratorStats(BaseModel):
     tasks: int
     samples_per_task: int
     generation_errors: int
-    pass_at_1: float
-    pass_at_1_ci: tuple[float, float]
+    pass_at_1: float | None
+    pass_at_1_ci: tuple[float, float] | None
     pass_at_k: dict[int, float]
-    mean_score: float
-    mean_score_ci: tuple[float, float]
+    mean_score: float | None
+    mean_score_ci: tuple[float, float] | None
     functional_correctness: float | None
     edge_case_handling: float | None
     test_coverage: float | None
@@ -263,6 +263,10 @@ def _mean(xs: Sequence[float]) -> float:
     return sum(xs) / len(xs) if xs else 0.0
 
 
+def _defined(xs: Sequence[float | None]) -> list[float]:
+    return [x for x in xs if x is not None]
+
+
 def _mean_opt(xs: Sequence[float | None]) -> float | None:
     vals = [x for x in xs if x is not None]
     return round(_mean(vals), 2) if vals else None
@@ -282,11 +286,20 @@ def _bootstrap_indices(n_tasks: int, n_boot: int, seed: int) -> list[list[int]]:
     return [[rng.randrange(n_tasks) for _ in range(n_tasks)] for _ in range(n_boot)]
 
 
-def _ci(values: list[float], boots: list[list[int]]) -> tuple[float, float]:
-    if len(values) < 2:
-        v = values[0] if values else 0.0
+def _ci(values: Sequence[float | None], boots: list[list[int]]) -> tuple[float, float]:
+    present = _defined(values)
+    if len(present) < 2:
+        v = present[0] if present else 0.0
         return (v, v)
-    means = sorted(_mean([values[i] for i in idx]) for idx in boots)
+    means: list[float] = []
+    for idx in boots:
+        sample = _defined([values[i] for i in idx])
+        if sample:
+            means.append(_mean(sample))
+    if len(means) < 2:
+        v = means[0] if means else 0.0
+        return (v, v)
+    means.sort()
     return (round(_percentile(means, 0.025), 4), round(_percentile(means, 0.975), 4))
 
 
@@ -318,41 +331,62 @@ def build_leaderboard(run: Path, *, n_boot: int = 2000, seed: int = 0) -> Leader
     boots = _bootstrap_indices(len(task_ids), n_boot, seed)
     stats: list[GeneratorStats] = []
     per_task: dict[str, dict[str, TaskCell]] = {tid: {} for tid in task_ids}
-    task_scores: dict[str, list[float]] = {}
+    task_scores: dict[str, list[float | None]] = {}
     for gen in manifest.generators:
-        solve_frac: list[float] = []
-        scores: list[float] = []
-        pak: dict[int, list[float]] = {k: [] for k in sorted({1, n})}
+        solve_frac: list[float | None] = []
+        scores: list[float | None] = []
+        pak: dict[int, list[float | None]] = {k: [] for k in sorted({1, n})}
         evaluated: list[CandidateReport] = []
         errors = 0
         for tid in task_ids:
             sample_reps = [reports[tid].get(label(gen, k)) for k in range(1, n + 1)]
             errors += sum(r is None for r in sample_reps)
-            # A sample that failed to generate counts as unsolved with score 0:
-            # an assistant that errors out has not produced working code.
-            c = sum(1 for r in sample_reps if r is not None and solved(r))
-            sample_scores = [r.scorecard.overall if r is not None else 0.0 for r in sample_reps]
+            # Generation errors stay in the attempt count with score 0.
+            # An incomplete evaluation is an operator outage: drop it from both
+            # the solved count and the attempt count, and do not store it as 0.
+            counted = [
+                r for r in sample_reps if r is None or r.verdict != Verdict.incomplete
+            ]
             evaluated += [r for r in sample_reps if r is not None]
-            solve_frac.append(c / n)
+            if not counted:
+                solve_frac.append(None)
+                scores.append(None)
+                for k in pak:
+                    pak[k].append(None)
+                per_task[tid][gen] = TaskCell(solved=0, samples=0, mean_score=None)
+                continue
+            c = sum(1 for r in counted if r is not None and solved(r))
+            sample_scores = [
+                0.0 if r is None else float(r.scorecard.overall or 0.0) for r in counted
+            ]
+            solve_frac.append(c / len(counted))
             scores.append(_mean(sample_scores))
             for k in pak:
-                pak[k].append(pass_at_k(n, c, k))
+                pak[k].append(pass_at_k(len(counted), c, k) if len(counted) >= k else None)
             per_task[tid][gen] = TaskCell(
-                solved=c, samples=n, mean_score=round(_mean(sample_scores), 2)
+                solved=c, samples=len(counted), mean_score=round(_mean(sample_scores), 2)
             )
         task_scores[gen] = scores
-        sc = [r.scorecard for r in evaluated]
+        measured = [r for r in evaluated if r.verdict != Verdict.incomplete]
+        sc = [r.scorecard for r in measured]
+        defined_solve = _defined(solve_frac)
+        defined_scores = _defined(scores)
+        pak_means: dict[int, float] = {}
+        for k, vals in pak.items():
+            defined = _defined(vals)
+            if defined:
+                pak_means[k] = round(_mean(defined), 4)
         stats.append(
             GeneratorStats(
                 generator=gen,
                 tasks=len(task_ids),
                 samples_per_task=n,
                 generation_errors=errors,
-                pass_at_1=round(_mean(solve_frac), 4),
-                pass_at_1_ci=_ci(solve_frac, boots),
-                pass_at_k={k: round(_mean(v), 4) for k, v in pak.items()},
-                mean_score=round(_mean(scores), 2),
-                mean_score_ci=_round_pair(_ci(scores, boots)),
+                pass_at_1=round(_mean(defined_solve), 4) if defined_solve else None,
+                pass_at_1_ci=_ci(solve_frac, boots) if defined_solve else None,
+                pass_at_k=pak_means,
+                mean_score=round(_mean(defined_scores), 2) if defined_scores else None,
+                mean_score_ci=_round_pair(_ci(scores, boots)) if defined_scores else None,
                 functional_correctness=_mean_opt([s.functional_correctness for s in sc]),
                 edge_case_handling=_mean_opt([s.edge_case_handling for s in sc]),
                 test_coverage=_mean_opt([s.test_coverage for s in sc]),
@@ -361,29 +395,47 @@ def build_leaderboard(run: Path, *, n_boot: int = 2000, seed: int = 0) -> Leader
                 security_failure_rate=round(
                     _mean([1.0 if s.security == "fail" else 0.0 for s in sc]), 4
                 ),
-                integrity_violations=sum("integrity" in r.gates_failed for r in evaluated),
+                integrity_violations=sum("integrity" in r.gates_failed for r in measured),
                 output_tokens=tokens.get(gen),
             )
         )
-    stats.sort(key=lambda g: (-g.pass_at_1, -g.mean_score, g.generator))
+    stats.sort(
+        key=lambda g: (
+            -(g.pass_at_1 if g.pass_at_1 is not None else -1.0),
+            -(g.mean_score if g.mean_score is not None else -1.0),
+            g.generator,
+        )
+    )
 
     pairwise: list[Pairwise] = []
     for i, a in enumerate(stats):
         for b in stats[i + 1 :]:
             xa, xb = task_scores[a.generator], task_scores[b.generator]
-            diffs = [p - q for p, q in zip(xa, xb, strict=True)]
+            diffs = [
+                None if p is None or q is None else p - q
+                for p, q in zip(xa, xb, strict=True)
+            ]
+            present = _defined(diffs)
+            if not present:
+                continue
             # Paired bootstrap over tasks: both generators see the same
             # resampled tasks, which cancels out task difficulty.
-            boot = (
-                sorted(_mean([diffs[j] for j in idx]) for idx in boots) if len(diffs) > 1 else diffs
-            )
+            if len(diffs) > 1:
+                boot_means = [
+                    _mean(sample)
+                    for idx in boots
+                    if (sample := _defined([diffs[j] for j in idx]))
+                ]
+                boot = sorted(boot_means) if boot_means else present
+            else:
+                boot = present
             lo, hi = _percentile(boot, 0.025), _percentile(boot, 0.975)
             better = sum(1.0 if d > 0 else 0.5 if d == 0 else 0.0 for d in boot) / len(boot)
             pairwise.append(
                 Pairwise(
                     a=a.generator,
                     b=b.generator,
-                    score_diff=round(_mean(diffs), 2),
+                    score_diff=round(_mean(present), 2),
                     score_diff_ci=(round(lo, 2), round(hi, 2)),
                     prob_a_better=round(better, 3),
                     significant=lo > 0 or hi < 0,
@@ -394,6 +446,7 @@ def build_leaderboard(run: Path, *, n_boot: int = 2000, seed: int = 0) -> Leader
         "pass@1 counts a sample as solved only if every visible and hidden test passed "
         "and no gate (build, integrity, security, correctness) failed.",
         "Samples that failed to generate count as unsolved with a score of 0.",
+        "An incomplete evaluation is left out of pass@k, both the solved count and the attempt count.",
         f"95% confidence intervals come from {n_boot} bootstrap resamples over tasks.",
     ]
     if len(task_ids) < 20:
@@ -433,12 +486,24 @@ def render_leaderboard(lb: Leaderboard) -> str:
     )
     lines.append("|" + "---|" * (10 + (1 if n > 1 else 0)))
     for i, g in enumerate(lb.generators, 1):
-        lo, hi = g.pass_at_1_ci
-        slo, shi = g.mean_score_ci
-        k_val = f" {g.pass_at_k.get(n, 0) * 100:.0f}% |" if n > 1 else ""
+        if g.pass_at_1 is None or g.pass_at_1_ci is None:
+            p1 = "n/a"
+        else:
+            lo, hi = g.pass_at_1_ci
+            p1 = f"{g.pass_at_1 * 100:.0f}% ({lo * 100:.0f}-{hi * 100:.0f})"
+        if g.mean_score is None or g.mean_score_ci is None:
+            mean = "n/a"
+        else:
+            slo, shi = g.mean_score_ci
+            mean = f"{g.mean_score:.1f} ({slo:.1f}-{shi:.1f})"
+        if n > 1:
+            rate = g.pass_at_k.get(n)
+            k_val = " n/a |" if rate is None else f" {rate * 100:.0f}% |"
+        else:
+            k_val = ""
         lines.append(
-            f"| {i} | **{g.generator}** | {g.pass_at_1 * 100:.0f}% ({lo * 100:.0f}-{hi * 100:.0f}) |"
-            f"{k_val} {g.mean_score:.1f} ({slo:.1f}-{shi:.1f}) | {_pct(g.functional_correctness)} "
+            f"| {i} | **{g.generator}** | {p1} |"
+            f"{k_val} {mean} | {_pct(g.functional_correctness)} "
             f"| {_pct(g.edge_case_handling)} | {_pct(g.test_coverage)} | {_pct(g.static_quality)} "
             f"| {g.security_failure_rate * 100:.0f}% | {g.generation_errors} |"
         )
@@ -460,7 +525,11 @@ def render_leaderboard(lb: Leaderboard) -> str:
         cells = [lb.per_task[tid][g] for g in gens]
         lines.append(
             f"| {tid} | "
-            + " | ".join(f"{c.solved}/{c.samples} · {c.mean_score:.0f}" for c in cells)
+            + " | ".join(
+                f"{c.solved}/{c.samples} · "
+                + ("n/a" if c.mean_score is None else f"{c.mean_score:.0f}")
+                for c in cells
+            )
             + " |"
         )
     lines += ["", "## Notes", ""] + [f"- {x}" for x in lb.notes]

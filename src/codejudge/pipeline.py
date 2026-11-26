@@ -75,7 +75,7 @@ def evaluate(
             return CandidateReport(
                 label=c.label,
                 model=c.model,
-                verdict=Verdict.failed,
+                verdict=Verdict.incomplete,
                 gates_failed=["evaluation_error"],
                 scorecard=Scorecard(),
                 stages=[],

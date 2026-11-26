@@ -58,7 +58,11 @@ stages depend on them.
   a gated candidate cannot outrank a passing one.
 * Rank is verdict first (`pass`, then `pass_with_warnings`, then `fail`),
   then overall score, then functional correctness. A clean pass at 60
-  outranks a warned pass at 95.
+  outranks a warned pass at 95. `incomplete` ranks with `fail`.
+* A stage error in integrity, build, tests, static analysis, or security
+  yields verdict `incomplete` and leaves the overall score unset. Leaderboard
+  pass@k omits that sample from the solved count and the attempt count. A
+  test runner that aborts is still a failed run with score 0, not an outage.
 * Performance with a `time_budget_ms` is scored against the budget; without
   one it is scored relative to the fastest candidate in the same evaluation.
   That score belongs to the cohort: it is not comparable across submissions

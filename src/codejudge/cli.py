@@ -48,7 +48,10 @@ def _evaluate(args: argparse.Namespace) -> int:
     else:
         print(out)
     if args.fail_under is not None:
-        best = max((c.scorecard.overall for c in report.candidates), default=0.0)
+        measured = [
+            c.scorecard.overall for c in report.candidates if c.scorecard.overall is not None
+        ]
+        best = max(measured, default=0.0)
         return 0 if best >= args.fail_under else 1
     return 0
 

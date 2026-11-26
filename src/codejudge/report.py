@@ -32,12 +32,16 @@ def _pct(v: float | None) -> str:
     return "n/a" if v is None else f"{v:.0f}%"
 
 
+def _overall(v: float | None) -> str:
+    return "n/a" if v is None else f"{v:.1f}"
+
+
 def comparison_rows(report: EvaluationReport) -> list[tuple[str, list[str]]]:
     cs = report.candidates
     sc = [c.scorecard for c in cs]
     return [
         ("Verdict", [c.verdict.value for c in cs]),
-        ("Overall score", [f"{s.overall:.1f}" for s in sc]),
+        ("Overall score", [_overall(s.overall) for s in sc]),
         ("Functional correctness", [_pct(s.functional_correctness) for s in sc]),
         ("Edge-case handling", [_pct(s.edge_case_handling) for s in sc]),
         ("Integration", [_pct(s.integration) for s in sc]),
@@ -80,7 +84,7 @@ def render_markdown(report: EvaluationReport) -> str:
 
 def _candidate_section(c: CandidateReport) -> list[str]:
     title = f"## {c.label}" + (f" ({c.model})" if c.model else "")
-    lines = [title, "", f"Verdict: **{c.verdict.value}** · overall {c.scorecard.overall:.1f}", ""]
+    lines = [title, "", f"Verdict: **{c.verdict.value}** · overall {_overall(c.scorecard.overall)}", ""]
     lines.append("| Stage | Status | Score | Summary |")
     lines.append("|---|---|---|---|")
     for s in c.stages:

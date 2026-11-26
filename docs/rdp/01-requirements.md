@@ -31,13 +31,13 @@ Stages run in this order. A selected subset still runs `integrity` and `build` f
 
 | Stage | Pass condition | Effect on the verdict |
 |---|---|---|
-| `integrity` | AST scan of solution files finds no high or critical tamper/injection finding | Failure is a hard gate. Score becomes 0. |
-| `build` | `<module>.py` is present, every solution file compiles, the module imports | Any non-pass is a hard gate. Score becomes 0. |
-| `visible_tests` | Task-author suites with `hidden: false` | Feeds functional correctness, edge cases, and integration. A crashed run scores 0, not "no failures". |
+| `integrity` | AST scan of solution files finds no high or critical tamper/injection finding | Failure is a hard gate. Score becomes 0. Status `error` is verdict `incomplete` and the overall score stays unset. |
+| `build` | `<module>.py` is present, every solution file compiles, the module imports | Failure is a hard gate. Score becomes 0. Status `error` is verdict `incomplete` and the overall score stays unset. |
+| `visible_tests` | Task-author suites with `hidden: false` | Feeds functional correctness, edge cases, and integration. A runner abort is status `failed` and scores 0, not "no failures". Status `error` is verdict `incomplete`. |
 | `hidden_tests` | Held-out suites | Same scoring. Names and failure text are removed in the public report. |
-| `candidate_tests` | Generator-written tests, plus line and branch coverage of its own solution | Coverage counts only for tests that pass. Missing tests drop this signal and its weight is redistributed. |
-| `static_analysis` | Ruff, mypy, annotation coverage | Score only. Not a gate. A tool crash is stage status `error` and the signal is dropped. |
-| `security` | Bandit and offline Semgrep | High or critical finding is a hard gate. Low and medium findings reduce `security_score` and yield a warning. A scanner crash is stage status `error` and must not look like a clean scan. |
+| `candidate_tests` | Generator-written tests, plus line and branch coverage of its own solution | Coverage counts only for tests that pass. Missing tests drop this signal and its weight is redistributed. Status `error` is verdict `incomplete`. |
+| `static_analysis` | Ruff, mypy, annotation coverage | Score only. Not a gate. Status `error` drops the signal and the verdict is `incomplete`. |
+| `security` | Bandit and offline Semgrep | High or critical finding is a hard gate. Low and medium findings reduce `security_score` and yield a warning. A scanner crash is status `error`, verdict `incomplete`, and must not look like a clean scan. |
 | `performance` | One container per benchmark | A budget miss is a warning, not a gate. No budget means the score is relative to the fastest candidate in the same run. A timeout contributes 0 and suppresses the headline geomean. |
 | `llm_review` | Rubric integers 1–5, mapped onto 0–100 | Advisory. Skipped when no credentials. Cannot override a gate. |
 
@@ -64,15 +64,16 @@ Functional correctness is the pass rate of tests in category `correctness`. Edge
 
 ### Verdict and rank
 
-- `fail` when any gate fired.
+- `incomplete` when integrity, build, a test stage, static analysis, or security ended in `error`. The overall score stays unset. It sorts with `fail`, after every pass.
+- `fail` when any gate fired and the candidate is not `incomplete`.
 - `pass_with_warnings` when no gate fired and any non-LLM stage is `warning` or `failed` (a benchmark over budget, a partial test run at or above 50%, low-severity security findings, weak static score).
 - `pass` otherwise.
 
-Rank is verdict first (`pass`, then `pass_with_warnings`, then `fail`), then overall score, then functional correctness. A clean pass at 60 outranks a warned pass at 95.
+Rank is verdict first (`pass`, then `pass_with_warnings`, then `fail` and `incomplete` together), then overall score, then functional correctness. A clean pass at 60 outranks a warned pass at 95. An unset overall sorts after every measured score, including 0.
 
 ### Leaderboard
 
-A sample is solved only when every visible and hidden test passed and no gate failed. Generation errors count as unsolved with score 0. pass@1 and pass@k use the unbiased estimator. Confidence intervals are a bootstrap over tasks. A pairwise gap is significant only when its interval excludes zero. Samples of one task are evaluated together so relative performance is measured on the same machine at the same time.
+A sample is solved only when every visible and hidden test passed and no gate failed. Generation errors count as unsolved with score 0. An `incomplete` sample is left out of pass@k, both the solved count and the attempt count. pass@1 and pass@k use the unbiased estimator. Confidence intervals are a bootstrap over tasks. A pairwise gap is significant only when its interval excludes zero. Samples of one task are evaluated together so relative performance is measured on the same machine at the same time.
 
 ## Isolation contract
 

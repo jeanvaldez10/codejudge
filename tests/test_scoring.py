@@ -1,6 +1,9 @@
+import pytest
+
 from codejudge.models import (
     BenchmarkResult,
     CandidateReport,
+    EvaluationReport,
     Scorecard,
     StageResult,
     StageStatus,
@@ -8,6 +11,7 @@ from codejudge.models import (
     TestCategory,
     Verdict,
 )
+from codejudge.report import render_markdown
 from codejudge.scoring import (
     INTEGRITY_BUILD_OVERALL,
     OTHER_GATE_CAP,
@@ -16,8 +20,6 @@ from codejudge.scoring import (
     finalize,
     rank,
 )
-
-
 def tc(cat, ok, hidden=False):
     return TestCaseResult(
         nodeid=f"x::{cat}{ok}",
@@ -216,3 +218,69 @@ def test_rank_breaks_overall_ties_on_functional_correctness():
         stages=[],
     )
     assert rank([low, high]) == ["high", "low"]
+
+
+@pytest.mark.parametrize(
+    "stage_name",
+    [
+        "integrity",
+        "build",
+        "visible_tests",
+        "hidden_tests",
+        "candidate_tests",
+        "static_analysis",
+        "security",
+    ],
+)
+def test_stage_error_is_incomplete_and_leaves_overall_unset(stage_name):
+    crashed = stage(stage_name, status=StageStatus.error, score=None)
+    stages = [crashed] if stage_name == "build" else [stage("build"), crashed]
+    r = report("a", stages)
+    finalize(r)
+    assert r.verdict == Verdict.incomplete
+    assert r.scorecard.overall is None
+
+
+def test_performance_or_llm_error_stays_a_dropped_signal():
+    tests = [tc(TestCategory.correctness, True)]
+    for name in ("performance", "llm_review"):
+        r = report(
+            "a",
+            [
+                stage("build"),
+                stage("visible_tests", tests=tests),
+                stage(name, status=StageStatus.error, score=None),
+            ],
+        )
+        finalize(r)
+        assert r.verdict == Verdict.passed
+        assert r.scorecard.overall == 100.0
+
+
+def test_incomplete_sorts_with_fail_after_measured_scores():
+    clean = CandidateReport(
+        label="clean", verdict=Verdict.passed, scorecard=Scorecard(overall=60), stages=[]
+    )
+    failed = CandidateReport(
+        label="failed", verdict=Verdict.failed, scorecard=Scorecard(overall=0), stages=[]
+    )
+    outage = CandidateReport(
+        label="outage", verdict=Verdict.incomplete, scorecard=Scorecard(), stages=[]
+    )
+    assert rank([outage, failed, clean]) == ["clean", "failed", "outage"]
+
+
+def test_markdown_renders_incomplete_without_a_fake_zero():
+    r = report("a", [stage("static_analysis", status=StageStatus.error, score=None)])
+    finalize(r)
+    md = render_markdown(
+        EvaluationReport(
+            task_id="t",
+            task_title="T",
+            candidates=[r],
+            ranking=["a"],
+            weights={},
+        )
+    )
+    assert "incomplete" in md
+    assert "overall n/a" in md

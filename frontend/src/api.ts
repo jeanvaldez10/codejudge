@@ -48,13 +48,13 @@ export interface Scorecard {
   performance_median_ms: number | null;
   performance_score: number | null;
   llm_quality: number | null;
-  overall: number;
+  overall: number | null;
 }
 
 export interface CandidateReport {
   label: string;
   model: string | null;
-  verdict: "pass" | "pass_with_warnings" | "fail";
+  verdict: "pass" | "pass_with_warnings" | "fail" | "incomplete";
   gates_failed: string[];
   scorecard: Scorecard;
   stages: Stage[];
